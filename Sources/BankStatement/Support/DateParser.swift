@@ -56,6 +56,8 @@ enum DateParser {
     ///   `12-Mar`, `Mar 12, 2026`, `2026-03-12`.
     /// - Returns: The token, or nil when the text is not a date.
     static func token(_ text: String) -> Token? {
+        // A date has a digit and is short; most text asked about is neither.
+        guard text.count <= 20, text.contains(where: \.isNumber) else { return nil }
         let body = text.trimmingCharacters(in: .whitespaces).lowercased()
 
         if let match = body.wholeMatch(of: /(\d{4})-(\d{1,2})-(\d{1,2})/) {
@@ -207,6 +209,12 @@ enum DateParser {
         var index = 0
         while index < words.count {
             var advanced = false
+            // A date starts with a digit or a month's name.
+            let first = words[index].lowercased()
+            guard first.first?.isNumber == true || months[String(first.prefix(3))] != nil else {
+                index += 1
+                continue
+            }
             for length in stride(from: min(4, words.count - index), through: 1, by: -1) {
                 let text = words[index..<index + length].joined(separator: " ")
                 if let token = token(text), token.hasYear, let date = resolve(token, order: order) {

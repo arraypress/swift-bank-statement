@@ -96,6 +96,9 @@ enum HeaderMatcher {
     ///   headings in all, a gutter between each, and no more unrecognised
     ///   words than recognised headings.
     static func columns(in row: TextRow) -> [Column]? {
+        // Every date heading says "date"; a row without the word is not a
+        // header, and most rows are not.
+        guard row.words.count >= 3, row.text.lowercased().contains("date") else { return nil }
         let words = row.words
         let height = row.height
         var columns: [Column] = []

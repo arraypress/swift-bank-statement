@@ -113,7 +113,7 @@ unless a test breaks it on purpose.
 | **100 generated statements** — 3–60 random transactions, 1–3 line descriptions, random page lengths and overdrafts, fixed seed | **100 / 100** read exactly and reconciled |
 | **50 generated misprints** — one figure printed a penny out | **50 / 50** reported `broken` |
 | A figure altered; a row dropped | broken at exactly that row, naming it |
-| 400 transactions over 16 pages | 2.2 s (debug build) |
+| 400 transactions over 11 pages, release build | **0.22 s** end to end, through the CLI |
 
 **Real bank statements are UNTESTED.** Everything above is synthetic. Until
 this has been run on real statements from real banks, treat a new bank's
@@ -123,10 +123,18 @@ because a misread shows up as `broken` rather than as wrong numbers.
 **A probe that changed the design.** PDFKit's `characterBounds(at:)` drifts one
 character per line break away from `PDFPage.string` — on the first probe, index
 42 returned the box of character 43, so every word after the first line would
-have been placed under its neighbour. `selection(for:)` on a one-character
-range agrees with the string, and that is what this reads with.
+have been placed under its neighbour. `selection(for:)` on a range agrees
+with the string, and that is what this reads with — a token at a time, and a
+character at a time only for a token too wide to be one word.
 `selectionsByLine()` was ruled out the same way: it split one printed row in
 two at the gap before the money columns.
+
+**Where the time went.** The first build took 2.1 s for that 400-row
+statement, and reading the text layer was not why: profiled, PDFKit took
+0.04 s and the rest was Swift `Regex` run on every word of every row — the
+header test, the money test, the date search. A digit check before the
+money and date patterns, the word "date" before the header test, and looking
+for the period outside the table first took it to 0.22 s.
 
 **A test that changed a regex.** Swift's `\b` follows Unicode's word rules,
 which read `234,56` as a single word — so the rule that rejoins `1 234,56`

@@ -60,7 +60,10 @@ enum StatementParser {
         }
 
         // Then the year, for dates printed without one.
-        let periodEnd = self.periodEnd(rows: table.outside + table.inside, order: order)
+        // The period is printed outside the table; the table is only searched
+        // when nothing outside it carries a year.
+        let periodEnd = self.periodEnd(rows: table.outside, order: order)
+            ?? self.periodEnd(rows: table.inside, order: order)
             ?? options.year.map { StatementDate(year: $0, month: 12, day: 31) }
         var dates: [StatementDate?] = []
         var last: StatementDate?

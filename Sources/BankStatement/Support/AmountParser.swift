@@ -33,6 +33,8 @@ enum AmountParser {
     /// - Parameter text: The figure as printed.
     /// - Returns: The amount, or nil when the text is not money.
     static func parse(_ text: String) -> PrintedAmount? {
+        // Every word of every row is asked; most have no digit at all.
+        guard text.count <= 24, text.contains(where: \.isASCIIDigit) else { return nil }
         var body = text.trimmingCharacters(in: .whitespaces).uppercased()
         guard !body.isEmpty else { return nil }
 
