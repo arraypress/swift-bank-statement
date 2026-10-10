@@ -27,7 +27,52 @@ enum BalanceFinder {
             if closing == nil { closing = figure(after: RowVocabulary.closing, in: row) }
             if opening != nil, closing != nil { break }
         }
+        if opening == nil || closing == nil {
+            let dated = datedBalances(in: rows)
+            if dated.count >= 2 {
+                opening = opening ?? dated.first?.amount
+                closing = closing ?? dated.last?.amount
+            }
+        }
         return (opening, closing)
+    }
+
+    /// The words that open a dated balance: "Balance as of 01.05.2025:",
+    /// "Saldo per 31-05-2025", "Solde au 31 janvier 2025".
+    static let datedLabels: Set<String> = ["balance", "saldo", "solde", "kontostand"]
+    static let datedLinks: Set<String> = ["as", "of", "on", "at", "per", "op", "au", "am", "al", "em", "du", "le"]
+
+    /// Balances labelled only by their date, earliest first.
+    ///
+    /// A summary that says "Balance as of 01.05.2025" and "Balance as of
+    /// 31.05.2025" names its opening and closing by date, not by word: the
+    /// earlier is the opening. Found on a real-layout benchmark statement
+    /// (bsb-003), which printed no other balance anywhere — so without this
+    /// it came back unverifiable with a page of transactions missing.
+    static func datedBalances(in rows: [TextRow]) -> [(date: StatementDate, amount: PrintedAmount)] {
+        var found: [(token: DateParser.Token, amount: PrintedAmount)] = []
+        for row in rows {
+            let words = row.words.map { $0.text.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ":")) }
+            guard let label = words.firstIndex(where: datedLabels.contains) else { continue }
+            var index = label + 1
+            while index < words.count, datedLinks.contains(words[index]) { index += 1 }
+            // The date may run over several words: "31 janvier 2025".
+            var token: DateParser.Token?
+            var end = index
+            for length in stride(from: min(3, words.count - index), through: 1, by: -1) {
+                if let parsed = DateParser.token(words[index..<index + length].joined(separator: " ")) {
+                    token = parsed
+                    end = index + length
+                    break
+                }
+            }
+            guard let token, end < row.words.count,
+                  let amount = row.words[end...].lazy.compactMap({ AmountParser.parse($0.text) }).first else { continue }
+            found.append((token, amount))
+        }
+        let order = DateParser.decideOrder(found.map(\.token), fallback: .dayFirst).order
+        return found.compactMap { item in DateParser.resolve(item.token, order: order).map { ($0, item.amount) } }
+            .sorted { $0.date < $1.date }
     }
 
     /// The first figure after any of the labels on a row.

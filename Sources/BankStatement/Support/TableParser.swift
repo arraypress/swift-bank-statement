@@ -62,6 +62,8 @@ enum TableParser {
         // The page a table was seen to end on. It does not restart there
         // without a header: below its end is a footer, whatever it looks like.
         var endedOn: Int?
+        // Whether the previous row was a header — its second line is skipped.
+        var headerAbove = false
 
         for row in rows {
             if row.page != page {
@@ -75,6 +77,7 @@ enum TableParser {
                 lastY = row.frame.midY
                 result.foundHeader = true
                 result.inside.append(row)
+                headerAbove = true
                 continue
             }
             guard let columns else {
@@ -83,7 +86,24 @@ enum TableParser {
             }
 
             let cells = CellAssigner.cells(of: row, columns: columns)
-            let figures = cells.money.keys.contains { $0 != .balance }
+            // The header's second line — the same headings in a second
+            // language (日期 進支詳情 存入 提取 結餘), or a lone "($)" — has no
+            // date and no figure. Read as a row it became the tail of the
+            // transaction above it.
+            if headerAbove, cells.date == nil, cells.money.isEmpty {
+                headerAbove = false
+                result.inside.append(row)
+                continue
+            }
+            headerAbove = false
+            // An undated line whose only figures are zero is the description
+            // running on, not a transaction: one card statement (bsb-002 of a
+            // real-layout benchmark) prints 0.00 beside every continuation
+            // line, and reading them as transactions doubled the count while
+            // still "reconciling" — a zero changes no sum.
+            let zeroOnly = cells.date == nil && !cells.money.isEmpty
+                && cells.money.filter { $0.key != .balance }.allSatisfy { $0.value.value == 0 }
+            let figures = !zeroOnly && cells.money.keys.contains { $0 != .balance }
 
             if inTable, let lastY {
                 let pitch = median(pitches) ?? row.height * 1.5

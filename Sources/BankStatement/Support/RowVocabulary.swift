@@ -18,12 +18,18 @@ enum RowVocabulary {
     /// Labels for the balance a statement, or a page of one, opens with.
     static let opening = ["balance brought forward", "brought forward", "opening balance", "previous balance",
                           "start balance", "starting balance", "beginning balance", "balance b/f", "b/f",
-                          "balance forward", "balance at start", "balance from previous statement"]
+                          "balance forward", "balance at start", "balance from previous statement",
+                          // Dutch, French, German, Spanish, Italian, Portuguese.
+                          "beginsaldo", "vorig saldo", "solde d'ouverture", "solde précédent", "solde precedent",
+                          "ancien solde", "solde initial", "anfangssaldo", "alter kontostand", "alter saldo",
+                          "saldo inicial", "saldo anterior", "saldo iniziale", "saldo precedente"]
 
     /// Labels for the balance a statement, or a page of one, closes with.
     static let closing = ["balance carried forward", "carried forward", "closing balance", "new balance",
                           "ending balance", "end balance", "balance c/f", "c/f", "balance at end",
-                          "statement balance", "balance to next statement"]
+                          "statement balance", "balance to next statement",
+                          "eindsaldo", "nieuw saldo", "solde de fermeture", "nouveau solde", "solde final",
+                          "endsaldo", "neuer kontostand", "neuer saldo", "saldo final", "saldo actual", "saldo finale"]
 
     /// Labels for a row of totals.
     static let totals = ["total", "totals", "sub-total", "subtotal", "sub total"]

@@ -60,6 +60,12 @@ enum CellAssigner {
             }
         }
 
+        // No date column: the date leads the description ("02 janv. 25 SKIP
+        // PLATS"), and the same longest-run rule takes it from there.
+        if !ordered.contains(where: { $0.kind == .date }) {
+            dateWords = Array(cells.description.prefix(4))
+            cells.description.removeFirst(dateWords.count)
+        }
         // The longest run of leading words that reads as a date is the date;
         // whatever follows is a description that starts further left than
         // its heading. No date at all, and every word is description.

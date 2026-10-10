@@ -25,40 +25,53 @@ enum HeaderMatcher {
     /// card-statement wordings.
     static let vocabulary: [String: ColumnKind] = {
         var table: [String: ColumnKind] = [:]
-        for phrase in ["date", "transaction date", "trans date", "date of transaction", "txn date"] {
+        for phrase in ["date", "transaction date", "trans date", "date of transaction", "txn date",
+                       "datum", "boekdatum", "buchungstag", "buchungsdatum", "fecha", "data", "date operation"] {
             table[phrase] = .date
         }
         for phrase in ["posting date", "post date", "posted", "date posted", "value date",
-                       "booking date", "effective date", "processed", "date processed"] {
+                       "booking date", "effective date", "processed", "date processed",
+                       "valutadatum", "rentedatum", "wertstellung", "valuta", "date de valeur", "fecha valor"] {
             table[phrase] = .otherDate
         }
         for phrase in ["description", "details", "transaction details", "transaction description",
                        "description of transaction", "payment type and details", "particulars",
                        "narrative", "transaction", "transactions", "merchant", "payee",
-                       "description details", "type and details", "transaction type and details"] {
+                       "description details", "type and details", "transaction type and details",
+                       "omschrijving", "beschrijving", "mededelingen", "verwendungszweck", "buchungstext",
+                       "libelle", "operation", "operations", "nature de l'operation", "concepto", "descripcion"] {
             table[phrase] = .description
         }
         for phrase in ["paid out", "money out", "out", "debit", "debits", "withdrawal", "withdrawals",
                        "payments", "debit amount", "amount out", "outgoings", "withdrawn",
                        "withdrawals and other debits", "checks and other debits",
-                       "withdrawals and debits", "payments out"] {
+                       "withdrawals and debits", "payments out",
+                       "af", "debet", "soll", "cargo", "cargos", "cheques et debits", "retraits"] {
             table[phrase] = .moneyOut
         }
         for phrase in ["paid in", "money in", "in", "credit", "credits", "deposit", "deposits",
                        "receipts", "credit amount", "amount in", "lodgements", "lodgments",
                        "deposits and other credits", "deposits and additions", "deposits and credits",
-                       "payments in"] {
+                       "payments in",
+                       "bij", "haben", "abono", "abonos", "depots et credits", "depots"] {
             table[phrase] = .moneyIn
         }
-        for phrase in ["amount", "transaction amount", "value", "amount spent"] {
+        for phrase in ["amount", "transaction amount", "value", "amount spent",
+                       "bedrag", "betrag", "montant", "importe", "importo"] {
             table[phrase] = .amount
         }
         for phrase in ["balance", "running balance", "balance after", "ledger balance",
-                       "account balance", "daily balance"] {
+                       "account balance", "daily balance",
+                       "saldo", "solde", "kontostand"] {
             table[phrase] = .balance
         }
         return table
     }()
+
+    /// Words a header row carries: a date heading in any of the languages
+    /// above, or — for a table with its dates inside the description — a
+    /// balance heading.
+    static let headerCues = ["date", "datum", "fecha", "data", "balance", "solde", "saldo", "kontostand"]
 
     /// The longest heading, in words.
     static let longestPhrase = 5
@@ -73,7 +86,8 @@ enum HeaderMatcher {
     /// A heading normalised for lookup: lowercase, brackets and currency
     /// marks dropped, punctuation trimmed. "Paid out (£)" is "paid out".
     static func normalise(_ text: String) -> String {
-        var body = text.lowercased()
+        // Accents folded: "Détails", "Dépôts et crédits", "Débit".
+        var body = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
         body = body.replacing(/\([^)]*\)/, with: " ")
         body = body.replacing(/[£$€¥:*]/, with: " ")
         for code in ["gbp", "usd", "eur", "chf", "cad", "aud"] {
@@ -98,44 +112,35 @@ enum HeaderMatcher {
     static func columns(in row: TextRow) -> [Column]? {
         // Every date heading says "date"; a row without the word is not a
         // header, and most rows are not.
-        guard row.words.count >= 3, row.text.lowercased().contains("date") else { return nil }
-        let words = row.words
+        // Every date heading says "date" in one of the languages here — or
+        // the table has no date column and keeps its dates at the start of
+        // the description, and then it says balance. Most rows say neither.
+        let lowered = row.text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+        guard row.words.count >= 3,
+              headerCues.contains(where: { lowered.contains($0) }) else { return nil }
         let height = row.height
         var columns: [Column] = []
-        var unmatched: [PositionedWord] = []
         var unmatchedCells = 0
-        var index = 0
 
-        func flushUnmatched() {
-            guard !unmatched.isEmpty else { return }
-            let frame = unmatched.dropFirst().reduce(unmatched[0].frame) { $0.union($1.frame) }
-            columns.append(Column(kind: .other, frame: frame))
-            unmatchedCells += 1
-            unmatched = []
-        }
-
-        while index < words.count {
-            var matched = false
-            for length in stride(from: min(longestPhrase, words.count - index), through: 1, by: -1) {
-                let slice = Array(words[index..<index + length])
-                guard isOnePhrase(slice, height: height),
-                      let kind = kind(of: slice.map(\.text).joined(separator: " ")) else { continue }
-                flushUnmatched()
-                let frame = slice.dropFirst().reduce(slice[0].frame) { $0.union($1.frame) }
+        // Cells first: words closer than a column gutter are one heading.
+        // Matching phrases across the whole row instead split "Merchant
+        // Name or Transaction Description" into an unknown "Merchant Name
+        // or" and a description a fifth of a line apart — and the gutter
+        // check then refused the row. Found on a real-layout benchmark
+        // statement (bsb-002), with "Interest Date" (bsb-003) the same way.
+        for cell in cells(of: row.words, height: height) {
+            let frame = cell.dropFirst().reduce(cell[0].frame) { $0.union($1.frame) }
+            if let kind = kind(ofCell: cell, height: height) {
                 columns.append(Column(kind: kind, frame: frame))
-                index += length
-                matched = true
-                break
-            }
-            if !matched {
-                if let last = unmatched.last, words[index].frame.minX - last.frame.maxX > height * phraseGap {
-                    flushUnmatched()
-                }
-                unmatched.append(words[index])
-                index += 1
+            } else if let split = phrases(in: cell, height: height) {
+                // Two headings set too close to be told apart by the gutter:
+                // fall back to finding each phrase within the cell.
+                columns += split
+            } else {
+                columns.append(Column(kind: .other, frame: frame))
+                unmatchedCells += 1
             }
         }
-        flushUnmatched()
 
         // One date column; any after the first is a second date to drop.
         var seenDate = false
@@ -146,7 +151,12 @@ enum HeaderMatcher {
         }
 
         let recognised = columns.filter { $0.kind != .other }
-        guard recognised.contains(where: { $0.kind == .date }),
+        // A date column, or — for a table that prints its dates inside the
+        // description (bsb-005, French) — a description AND a balance, which
+        // a sentence in the small print is unlikely to set out in columns.
+        let dated = recognised.contains(where: { $0.kind == .date })
+            || (recognised.contains(where: { $0.kind == .description }) && recognised.contains(where: { $0.kind == .balance }))
+        guard dated,
               recognised.contains(where: { [.moneyOut, .moneyIn, .amount].contains($0.kind) }),
               recognised.count >= 3,
               unmatchedCells <= recognised.count else { return nil }
@@ -156,6 +166,72 @@ enum HeaderMatcher {
             return nil
         }
         return columns
+    }
+
+    /// Runs of words with no gutter between them — one heading each.
+    static func cells(of words: [PositionedWord], height: CGFloat) -> [[PositionedWord]] {
+        var cells: [[PositionedWord]] = []
+        for word in words {
+            if let last = cells.last?.last, word.frame.minX - last.frame.maxX < height * columnGutter {
+                cells[cells.count - 1].append(word)
+            } else {
+                cells.append([word])
+            }
+        }
+        return cells
+    }
+
+    /// What a whole cell names: the cell itself if it is a known heading,
+    /// otherwise the longest known heading inside it — "Merchant Name or
+    /// Transaction Description" is a description, "Interest Date" a date —
+    /// as long as every heading inside it agrees on the kind.
+    static func kind(ofCell cell: [PositionedWord], height: CGFloat) -> ColumnKind? {
+        let texts = cell.map(\.text)
+        if let whole = kind(of: texts.joined(separator: " ")) { return whole }
+        var found: [(length: Int, kind: ColumnKind)] = []
+        for start in texts.indices {
+            for length in 1...min(longestPhrase, texts.count - start) {
+                if let kind = kind(of: texts[start..<start + length].joined(separator: " ")) {
+                    found.append((length, kind))
+                }
+            }
+        }
+        guard let longest = found.max(by: { $0.length < $1.length }) else { return nil }
+        return Set(found.map(\.kind)).count == 1 ? longest.kind : nil
+    }
+
+    /// Each known heading in a cell that holds more than one kind, left to
+    /// right — the old word-by-word matching, kept for headings set closer
+    /// than a gutter. Nil when the cell names nothing.
+    static func phrases(in cell: [PositionedWord], height: CGFloat) -> [Column]? {
+        var columns: [Column] = []
+        var other: [PositionedWord] = []
+        func flush() {
+            guard let first = other.first else { return }
+            columns.append(Column(kind: .other, frame: other.dropFirst().reduce(first.frame) { $0.union($1.frame) }))
+            other = []
+        }
+        var index = 0
+        while index < cell.count {
+            var matched = false
+            for length in stride(from: min(longestPhrase, cell.count - index), through: 1, by: -1) {
+                let slice = Array(cell[index..<index + length])
+                guard let kind = kind(of: slice.map(\.text).joined(separator: " ")) else { continue }
+                flush()
+                columns.append(Column(kind: kind, frame: slice.dropFirst().reduce(slice[0].frame) { $0.union($1.frame) }))
+                index += length
+                matched = true
+                break
+            }
+            if !matched {
+                // Kept, not dropped: the words between headings are what make
+                // a sentence in the small print fail the gutter check.
+                other.append(cell[index])
+                index += 1
+            }
+        }
+        flush()
+        return columns.filter { $0.kind != .other }.count > 1 ? columns : nil
     }
 
     /// Whether consecutive words are close enough to be one heading.

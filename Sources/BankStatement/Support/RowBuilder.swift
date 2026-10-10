@@ -60,6 +60,12 @@ enum RowBuilder {
     /// - Parameter words: The row's words, left to right.
     /// - Returns: The words, with split figures joined.
     static func mergingMoney(_ words: [PositionedWord]) -> [PositionedWord] {
+        // A space's width is the row's own, not a fixed share of the type
+        // height: one real-layout statement (bsb-005) set every space at
+        // 0.6 of a height, the old fixed limit, so "1 200,45 $" stayed three
+        // words and its closing balance read as 133.60.
+        let gaps = zip(words, words.dropFirst()).map { $1.frame.minX - $0.frame.maxX }.filter { $0 > 0 }.sorted()
+        let typicalSpace = gaps.isEmpty ? 0 : gaps[gaps.count / 2]
         var result: [PositionedWord] = []
         for word in words {
             guard let previous = result.last else {
@@ -68,7 +74,7 @@ enum RowBuilder {
             }
             let height = max(previous.frame.height, word.frame.height, 1)
             let gap = word.frame.minX - previous.frame.maxX
-            guard gap < height * 0.6 else {
+            guard gap < max(height * 0.6, min(typicalSpace * 1.3, height * 0.9)) else {
                 result.append(word)
                 continue
             }
@@ -78,6 +84,11 @@ enum RowBuilder {
                 joined = previous.text + upper
             } else if AmountParser.currencyMarks.contains(previous.text.uppercased()),
                       AmountParser.isAmount(word.text) {
+                joined = previous.text + word.text
+            } else if AmountParser.isAmount(previous.text), AmountParser.currencyMarks.contains(upper),
+                      AmountParser.isAmount(previous.text + word.text) {
+                // A mark set after the figure, as much of Europe prints it:
+                // "114,83 €". Left alone it ended up in the description.
                 joined = previous.text + word.text
             } else if previous.text.wholeMatch(of: /[\-−(+]?\p{Sc}?\d{1,3}/) != nil,
                       word.text.wholeMatch(of: /\d{3}(?!\d).*/) != nil,

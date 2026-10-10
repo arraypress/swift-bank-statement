@@ -35,16 +35,34 @@ enum DateParser {
         }
     }
 
-    /// Month names and their abbreviations, English. Lowercase.
+    /// Month names and their abbreviations, lowercase and unaccented:
+    /// English, and the languages statements most often arrive in — Dutch,
+    /// French, German, Spanish, Italian, Portuguese. A real-layout benchmark
+    /// statement printed "1 mei" (Dutch) and "02 janv. 25" (French); with
+    /// English names alone no date parsed, and a page with no header of its
+    /// own — which continues the table from its first DATED row — was lost.
     static let months: [String: Int] = {
-        let names = ["january", "february", "march", "april", "may", "june", "july",
-                     "august", "september", "october", "november", "december"]
+        let names: [[String]] = [
+            ["january", "januari", "janvier", "janv", "januar", "enero", "ene", "gennaio", "gen", "janeiro"],
+            ["february", "februari", "fevrier", "fevr", "fev", "februar", "febrero", "febbraio", "fevereiro"],
+            ["march", "maart", "mrt", "mars", "marz", "mrz", "marzo", "marco"],
+            ["april", "avril", "avr", "abril", "abr", "aprile"],
+            ["may", "mei", "mai", "mayo", "maggio", "mag", "maio"],
+            ["june", "juni", "juin", "junio", "giugno", "giu", "junho"],
+            ["july", "juli", "juillet", "juil", "julio", "luglio", "lug", "julho"],
+            ["august", "augustus", "aout", "agosto", "ago"],
+            ["september", "septembre", "septiembre", "setiembre", "settembre", "set", "setembro", "sept"],
+            ["october", "oktober", "okt", "octobre", "octubre", "ottobre", "ott", "outubro", "out"],
+            ["november", "novembre", "noviembre", "novembro"],
+            ["december", "decembre", "dezember", "dez", "diciembre", "dic", "dicembre", "dezembro"],
+        ]
         var table: [String: Int] = [:]
-        for (index, name) in names.enumerated() {
-            table[name] = index + 1
-            table[String(name.prefix(3))] = index + 1
+        for (index, spellings) in names.enumerated() {
+            for name in spellings {
+                table[name] = index + 1
+                if name.count > 3, table[String(name.prefix(3))] == nil { table[String(name.prefix(3))] = index + 1 }
+            }
         }
-        table["sept"] = 9
         return table
     }()
 
@@ -58,7 +76,9 @@ enum DateParser {
     static func token(_ text: String) -> Token? {
         // A date has a digit and is short; most text asked about is neither.
         guard text.count <= 20, text.contains(where: \.isNumber) else { return nil }
-        let body = text.trimmingCharacters(in: .whitespaces).lowercased()
+        // Accents folded, so "févr" and "märz" meet their table entries.
+        let body = text.trimmingCharacters(in: .whitespaces)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
 
         if let match = body.wholeMatch(of: /(\d{4})-(\d{1,2})-(\d{1,2})/) {
             return valid(.iso(year: Int(match.1)!, month: Int(match.2)!, day: Int(match.3)!))
@@ -67,11 +87,11 @@ enum DateParser {
             return valid(.numeric(first: Int(match.1)!, second: Int(match.2)!,
                                   year: match.3.map { year(String($0)) }))
         }
-        if let match = body.wholeMatch(of: /(\d{1,2})(?:st|nd|rd|th)?[ \-]?([a-z]{3,9})\.?(?:[ \-,]+(\d{4}|\d{2}))?/),
+        if let match = body.wholeMatch(of: /(\d{1,2})(?:st|nd|rd|th|\.)?[ \-]?([a-z]{3,10})\.?(?:[ \-,]+(\d{4}|\d{2}))?/),
            let month = months[String(match.2)] {
             return valid(.named(day: Int(match.1)!, month: month, year: match.3.map { year(String($0)) }))
         }
-        if let match = body.wholeMatch(of: /([a-z]{3,9})\.? ?(\d{1,2})(?:st|nd|rd|th)?(?:,? (\d{4}))?/),
+        if let match = body.wholeMatch(of: /([a-z]{3,10})\.? ?(\d{1,2})(?:st|nd|rd|th)?(?:,? (\d{4}))?/),
            let month = months[String(match.1)] {
             return valid(.named(day: Int(match.2)!, month: month, year: match.3.map { year(String($0)) }))
         }

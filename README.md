@@ -85,7 +85,8 @@ at the second stage, `StatementReader.read(pages:)`, as positioned words.
 - **Figures:** `1,234.56`, `1.234,56`, `1 234,56`, `1'234.56`, minus either
   side, brackets, currency marks, `CR`/`DR` attached or set apart.
 - **Dates:** `12/03/2026`, `12.03.26`, `12 Mar 2026`, `12-Mar`, `Mar 12, 2026`,
-  `2026-03-12`. Day-first or month-first is decided from **all** the dates at
+  `2026-03-12`, and month names in Dutch, French, German, Spanish, Italian and
+  Portuguese (`1 mei`, `02 janv. 25`, `22. März`). Day-first or month-first is decided from **all** the dates at
   once: a number over twelve settles it, and failing that, the reading that
   keeps the dates in order. When nothing on the page decides it, the result
   carries a warning saying which was assumed. Yearless dates are placed in the
@@ -115,10 +116,59 @@ unless a test breaks it on purpose.
 | A figure altered; a row dropped | broken at exactly that row, naming it |
 | 400 transactions over 11 pages, release build | **0.22 s** end to end, through the CLI |
 
-**Real bank statements are UNTESTED.** Everything above is synthetic. Until
-this has been run on real statements from real banks, treat a new bank's
-layout as unproven — the reconciliation is what makes that safe to try,
-because a misread shows up as `broken` rather than as wrong numbers.
+**Independent layouts: the bankstatemently benchmark.** Five born-digital
+statements from [bankstatemently/bank-statement-parsing-benchmark](https://github.com/bankstatemently/bank-statement-parsing-benchmark)
+(MIT; fictional banks with synthetic data, built by a third party to carry
+the formatting problems of real banks in five countries). Not used to build
+the parser, and not copied into this repository — the failures they exposed
+are rebuilt from positioned words in `RealLayoutTests`.
+
+| Statement | First run | After the fixes |
+|---|---|---|
+| bsb-001 — SG, withdrawal/deposit/balance, wrapped descriptions | reconciled, 12/12 | reconciled, 12/12, 13 balances checked |
+| bsb-002 — US card, post + trans date, one signed amount | no table found | reconciled, 15/15 |
+| bsb-003 — NL, Dutch dates (`1 mei`), `114,83 €`, page 2 with no header | no table found | reconciled, 22/22; in and out match the printed totals |
+| bsb-004 — HK, **two accounts** in one statement, bilingual headers | broken at the second account | broken at the second account (see below) |
+| bsb-005 — CA, French, date inside "Détails", `1 200,45 $` | no table found | reconciled, 25/25, 26 balances checked |
+
+**1 of 5 → 4 of 5**, every reconciled one with exactly the benchmark's
+transaction count. What each failure was:
+
+- A heading of many words — *Merchant Name or Transaction Description*,
+  *Interest Date* — was split into a known phrase and an unknown remainder a
+  fifth of a line apart, and the gutter rule refused the row. Headers are now
+  read cell by cell, a cell named by the longest heading inside it.
+- A card statement printed **0.00 beside every continuation line**. Read as
+  transactions they doubled the count to 30 — and it still *reconciled*,
+  because a zero changes no sum. The check cannot see that, so the parser
+  must: an undated line whose only figures are zero runs on from the line
+  above. The one known gap in "every read is checked".
+- Dutch and French month names did not parse, so a page with no header —
+  continued from its first *dated* row — was lost with two transactions on it.
+  Month names now in English, Dutch, French, German, Spanish, Italian and
+  Portuguese, accents folded.
+- "Balance as of 01.05.2025" and "… 31.05.2025" named the opening and closing
+  by date alone; the earlier is now the opening.
+- A table with no date column (French: the date leads "Détails") is a header
+  when it sets out a description, money and a balance; the date is taken from
+  the start of the description.
+- A document that spaced every word at 0.6 of a line — the old fixed limit for
+  joining `1 200,45` — read its closing balance as 133.60. The limit now
+  follows the row's own spacing. Currency marks set after a figure (`114,83 €`)
+  join it rather than trailing into the description.
+- A header's second line (the same headings in Chinese) became the tail of a
+  transaction; a dateless, figureless line right under a header is now part of it.
+
+**Still broken: bsb-004, two accounts in one statement.** The second account's
+first running balance (149,818.96) is checked against the first account's
+(18,183.08) and the read fails — loudly, exit 5, which is the safe failure.
+Reading one statement as several accounts needs the model to hold more than
+one, and is not done.
+
+**Real banks' own statements are still UNTESTED**: these are third-party
+reproductions of real layouts. The reconciliation is what makes trying a new
+bank safe — a misread shows as `broken`, not as wrong numbers — with the one
+exception above, now closed for the case that was found.
 
 **A probe that changed the design.** PDFKit's `characterBounds(at:)` drifts one
 character per line break away from `PDFPage.string` — on the first probe, index
@@ -149,8 +199,10 @@ never fired until a test asked for it.
 - **Currencies without minor units.** A figure must have two decimal places to
   count as money — the one rule that keeps "CARD 4417" and "STORE 2231" out of
   the amount columns. Yen statements are the cost.
-- **English headings only**, and headings on one line: a header that stacks
-  "Money" above "out" is not recognised.
+- **Headings in English, Dutch, French, German and Spanish only**, and on one
+  line: a header that stacks "Money" above "out" is not recognised.
+- **Several accounts in one statement** (bsb-004): reported `broken` at the
+  second account.
 - **A card statement with a "Payments" column** reads it as money out, which on
   a card it is not; the reconciliation breaks rather than passing.
 - **Rotated pages.**
