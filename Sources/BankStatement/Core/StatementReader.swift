@@ -69,6 +69,32 @@ public enum StatementReader {
         try StatementParser.parse(pages, source: source, options: options)
     }
 
+    /// Reads every account a statement PDF holds, each reconciled on its own.
+    ///
+    /// A bank that keeps several accounts together prints them in one
+    /// statement under separate headings; read as one table, the second
+    /// account's balances were checked against the first's. A statement of
+    /// one account comes back as one element, read exactly as
+    /// ``read(contentsOf:options:)`` reads it.
+    ///
+    /// - Parameters:
+    ///   - url: The PDF.
+    ///   - options: What the caller knows.
+    /// - Returns: One statement per account, labelled when there are several.
+    /// - Throws: Any ``StatementError``.
+    public static func accounts(contentsOf url: URL,
+                                options: StatementOptions = StatementOptions()) throws -> [Statement] {
+        guard let document = PDFDocument(url: url) else { throw StatementError.unreadableFile(url) }
+        guard !document.isLocked else { throw StatementError.locked(url) }
+        return try accounts(pages: PageText.pages(of: document), source: url, options: options)
+    }
+
+    /// Reads every account from words already placed on pages.
+    public static func accounts(pages: [StatementPage], source: URL? = nil,
+                                options: StatementOptions = StatementOptions()) throws -> [Statement] {
+        try StatementParser.parseAccounts(pages, source: source, options: options)
+    }
+
     /// The words of every page of a PDF, with their positions.
     ///
     /// - Parameter document: The PDF.

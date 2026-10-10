@@ -38,6 +38,10 @@ public struct Statement: Sendable, Codable, Equatable {
     /// Things a caller should know that did not stop the read — an assumed
     /// date order, a year that could not be found.
     public let warnings: [String]
+    /// Which account this is, when the PDF holds several — its name and the
+    /// last four digits ("HKD Current Account ••••2838"). Nil for a
+    /// statement of one account.
+    public let account: String?
 
     /// - Parameters:
     ///   - source: The file it came from.
@@ -52,11 +56,12 @@ public struct Statement: Sendable, Codable, Equatable {
     ///   - dateOrder: How numeric dates were read.
     ///   - reconciliation: Whether it adds up.
     ///   - warnings: What a caller should know.
+    ///   - account: Which account, when the PDF holds several.
     public init(source: URL?, pageCount: Int, transactions: [Transaction],
                 openingBalance: Decimal?, openingSource: BalanceSource?,
                 closingBalance: Decimal?, closingSource: BalanceSource?,
                 periodEnd: StatementDate?, sense: BalanceSense, dateOrder: DateOrder,
-                reconciliation: Reconciliation, warnings: [String]) {
+                reconciliation: Reconciliation, warnings: [String], account: String? = nil) {
         self.source = source
         self.pageCount = pageCount
         self.transactions = transactions
@@ -69,5 +74,6 @@ public struct Statement: Sendable, Codable, Equatable {
         self.dateOrder = dateOrder
         self.reconciliation = reconciliation
         self.warnings = warnings
+        self.account = account
     }
 }

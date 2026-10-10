@@ -128,7 +128,7 @@ are rebuilt from positioned words in `RealLayoutTests`.
 | bsb-001 — SG, withdrawal/deposit/balance, wrapped descriptions | reconciled, 12/12 | reconciled, 12/12, 13 balances checked |
 | bsb-002 — US card, post + trans date, one signed amount | no table found | reconciled, 15/15 |
 | bsb-003 — NL, Dutch dates (`1 mei`), `114,83 €`, page 2 with no header | no table found | reconciled, 22/22; in and out match the printed totals |
-| bsb-004 — HK, **two accounts** in one statement, bilingual headers | broken at the second account | broken at the second account (see below) |
+| bsb-004 — HK, **two accounts** in one statement, bilingual headers | broken at the second account | **both reconciled** (0.3.0: 15 + 11 transactions, read per account) |
 | bsb-005 — CA, French, date inside "Détails", `1 200,45 $` | no table found | reconciled, 25/25, 26 balances checked |
 
 **1 of 5 → 4 of 5**, every reconciled one with exactly the benchmark's
@@ -159,11 +159,16 @@ transaction count. What each failure was:
 - A header's second line (the same headings in Chinese) became the tail of a
   transaction; a dateless, figureless line right under a header is now part of it.
 
-**Still broken: bsb-004, two accounts in one statement.** The second account's
-first running balance (149,818.96) is checked against the first account's
-(18,183.08) and the read fails — loudly, exit 5, which is the safe failure.
-Reading one statement as several accounts needs the model to hold more than
-one, and is not done.
+**Several accounts in one statement (0.3.0).** bsb-004 holds a current and a
+savings account under their own headings; read as one table the savings
+account's first balance (149,818.96) was checked against the current
+account's last and the read failed. `StatementReader.accounts(contentsOf:)`
+cuts the rows at each heading that names an account and a number of eight
+digits or more, with no money on its row, so a "transfer to account …" line
+stays a transaction. A page header repeating the customer number had cut
+each account into pieces; pieces of the same account are joined. Each
+account reconciles on its own: **5 of 5 benchmark statements now reconcile.**
+A statement of one account reads exactly as `read` reads it.
 
 **Real banks' own statements are still UNTESTED**: these are third-party
 reproductions of real layouts. The reconciliation is what makes trying a new
@@ -201,8 +206,8 @@ never fired until a test asked for it.
   the amount columns. Yen statements are the cost.
 - **Headings in English, Dutch, French, German and Spanish only**, and on one
   line: a header that stacks "Money" above "out" is not recognised.
-- **Several accounts in one statement** (bsb-004): reported `broken` at the
-  second account.
+- ~~**Several accounts in one statement**~~ — read per account since 0.3.0. (Was: reported `broken` at the
+  second account.)
 - **A card statement with a "Payments" column** reads it as money out, which on
   a card it is not; the reconciliation breaks rather than passing.
 - **Rotated pages.**

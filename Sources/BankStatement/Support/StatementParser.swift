@@ -31,8 +31,45 @@ enum StatementParser {
     ///   all, ``StatementError/noTransactionTable(_:)`` when no table is found.
     static func parse(_ pages: [StatementPage], source: URL?, options: StatementOptions) throws -> Statement {
         guard pages.contains(where: { !$0.words.isEmpty }) else { throw StatementError.noTextLayer(source) }
+        return try parse(rows: pages.flatMap(RowBuilder.rows(of:)), context: [], source: source,
+                         pageCount: pages.count, options: options, account: nil)
+    }
 
+    /// Reads every account a statement holds.
+    ///
+    /// A statement with one account — or whose headings name fewer than two
+    /// accounts with tables — is read exactly as ``parse(_:source:options:)``
+    /// reads it, so nothing that reconciled before can change.
+    ///
+    /// - Returns: One statement per account, in the order printed.
+    static func parseAccounts(_ pages: [StatementPage], source: URL?, options: StatementOptions) throws -> [Statement] {
+        guard pages.contains(where: { !$0.words.isEmpty }) else { throw StatementError.noTextLayer(source) }
         let rows = pages.flatMap(RowBuilder.rows(of:))
+        let split = AccountSplitter.split(rows)
+        if Set(split.sections.map(\.id)).count >= 2 {
+            var accounts: [Statement] = []
+            for section in split.sections {
+                // An account listed on the summary page has no table there.
+                guard let statement = try? parse(rows: section.rows, context: split.preamble, source: source,
+                                                 pageCount: pages.count, options: options, account: section.label)
+                else { continue }
+                accounts.append(statement)
+            }
+            if Set(accounts.compactMap(\.account)).count >= 2 { return accounts }
+        }
+        return [try parse(pages, source: source, options: options)]
+    }
+
+    /// Reads one table's worth of rows.
+    ///
+    /// - Parameters:
+    ///   - rows: The rows to read.
+    ///   - context: Rows that belong to every account — the summary page —
+    ///     searched for the statement's period and its wording, never for
+    ///     balances, which on a summary page are the accounts' totals.
+    ///   - account: The account's label, when there are several.
+    static func parse(rows: [TextRow], context: [TextRow], source: URL?, pageCount: Int,
+                      options: StatementOptions, account: String?) throws -> Statement {
         let table = TableParser.parse(rows)
         let raws = table.entries.compactMap { entry -> RawTransaction? in
             if case .transaction(let transaction) = entry { return transaction }
@@ -41,7 +78,7 @@ enum StatementParser {
         guard table.foundHeader, !raws.isEmpty else { throw StatementError.noTransactionTable(source) }
 
         var warnings: [String] = []
-        let allText = rows.map(\.text).joined(separator: "\n")
+        let allText = (context + rows).map(\.text).joined(separator: "\n")
 
         // Dates: the order first, from every date in the table at once.
         let tokens = raws.map { $0.dateText.flatMap(DateParser.token) }
@@ -63,6 +100,7 @@ enum StatementParser {
         // The period is printed outside the table; the table is only searched
         // when nothing outside it carries a year.
         let periodEnd = self.periodEnd(rows: table.outside, order: order)
+            ?? self.periodEnd(rows: context, order: order)
             ?? self.periodEnd(rows: table.inside, order: order)
             ?? options.year.map { StatementDate(year: $0, month: 12, day: 31) }
         var dates: [StatementDate?] = []
@@ -110,11 +148,11 @@ enum StatementParser {
                         amount: outcome.amounts[index], balance: outcome.balances[index],
                         page: raws[index].page)
         }
-        return Statement(source: source, pageCount: pages.count, transactions: transactions,
+        return Statement(source: source, pageCount: pageCount, transactions: transactions,
                          openingBalance: outcome.opening?.0, openingSource: outcome.opening?.1,
                          closingBalance: outcome.closing?.0, closingSource: outcome.closing?.1,
                          periodEnd: periodEnd, sense: sense, dateOrder: order,
-                         reconciliation: outcome.reconciliation, warnings: warnings)
+                         reconciliation: outcome.reconciliation, warnings: warnings, account: account)
     }
 
     /// The latest full date the statement prints, preferring rows that state
