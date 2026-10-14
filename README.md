@@ -108,7 +108,7 @@ through PDFKit, so every test exercises the same text layer a bank's file does.
 Figures are invented; balances are computed, so every fixture is consistent
 unless a test breaks it on purpose.
 
-| | |
+| Test set | Result |
 |---|---|
 | Hand-built layouts — UK out/in/balance, US signed amount, debit/credit with no balance column, comma decimals, credit card, figures on the last line across a new year, three-page carried forward | every transaction, date, description and figure exact; all reconciled |
 | **100 generated statements** — 3–60 random transactions, 1–3 line descriptions, random page lengths and overdrafts, fixed seed | **100 / 100** read exactly and reconciled |
